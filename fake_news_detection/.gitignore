@@ -1,0 +1,17 @@
+# Ignore Data (DVC tracks these)
+data/*.tsv
+data/*.csv
+
+# Ignore MLflow Logs & Models (Too big/many files)
+mlruns/
+.trash/
+
+# Ignore Python Cache
+__pycache__/
+*.pyc
+
+# Ignore Environment
+.env
+venv/
+.DS_Store
+echo mlflow.db >> .gitignore

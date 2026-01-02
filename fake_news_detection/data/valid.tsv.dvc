@@ -1,0 +1,5 @@
+outs:
+- md5: b8910909172aa6d35b4539be4168022e
+  size: 302840
+  hash: md5
+  path: valid.tsv
