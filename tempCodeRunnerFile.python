@@ -9,6 +9,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler
+# Added classification_report, confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
 from preprocess import load_and_process_data
 
@@ -18,17 +19,30 @@ VALID_PATH = "data/valid.tsv"
 TEST_PATH = "data/test.tsv"
 
 def evaluate_and_save_metrics(model, X_test, y_test, filename="confusion_matrix.png"):
+    """
+    Generates predictions, prints a classification report (Precision, Recall, F1),
+    and saves a confusion matrix image.
+    """
+    # 1. Generate Predictions
     y_pred = model.predict(X_test)
+
+    # 2. Print the Text Report (Precision, Recall, F1)
     print("\n--- Model Performance Metrics ---")
     report = classification_report(y_test, y_pred, target_names=['Fake', 'Real']) 
     print(report)
 
+    # 3. Generate and Save the Confusion Matrix
     cm = confusion_matrix(y_test, y_pred)
     
+    # Create the plot
     fig, ax = plt.subplots(figsize=(8, 6))
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['Fake', 'Real'])
+    
+    # Plot with a blue color map
     disp.plot(cmap=plt.cm.Blues, ax=ax)
     plt.title("Confusion Matrix")
+    
+    # Save the figure
     plt.savefig(filename)
     print(f"Confusion matrix saved as '{filename}'")
     plt.close()
@@ -71,12 +85,19 @@ def train_model():
         val_preds = pipeline.predict(valid_df)
         val_acc = accuracy_score(valid_df['target'], val_preds)
         val_f1 = f1_score(valid_df['target'], val_preds)
+        
         print(f"      Validation Accuracy: {val_acc:.2%}")
         print(f"      Validation F1 Score: {val_f1:.4f}")
+
         test_preds = pipeline.predict(test_df)
         test_acc = accuracy_score(test_df['target'], test_preds)
         print(f"      Final Test Accuracy: {test_acc:.2%}")
+
+        # --- CALL NEW FUNCTION HERE ---
+        # Passing the pipeline, the full test dataframe (pipeline handles preprocessing), and labels
         evaluate_and_save_metrics(pipeline, test_df, test_df['target'])
+        # ------------------------------
+
         mlflow.log_metric("val_accuracy", val_acc)
         mlflow.log_metric("test_accuracy", test_acc)
         mlflow.sklearn.log_model(pipeline, "model")
