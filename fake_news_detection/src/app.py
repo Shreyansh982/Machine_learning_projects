@@ -29,8 +29,8 @@ if st.sidebar.button("🎲 Random Test Case"):
         row = test_df.sample(1).iloc[0]
         st.session_state['speaker'] = str(row['speaker'])
         st.session_state['party'] = str(row['party'])
-        st.session_state['subject'] = str(row['subject']) # NEW
-        st.session_state['context'] = str(row['ctx'])     # NEW
+        st.session_state['subject'] = str(row['subject']) 
+        st.session_state['context'] = str(row['ctx'])     
         st.session_state['statement'] = str(row['statement'])
         st.session_state['actual_label'] = str(row['label'])
 
