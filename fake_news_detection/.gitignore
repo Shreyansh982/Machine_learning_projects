@@ -1,17 +1,23 @@
-# Ignore Data (DVC tracks these)
-data/*.tsv
-data/*.csv
-
-# Ignore MLflow Logs & Models (Too big/many files)
-mlruns/
-.trash/
-
-# Ignore Python Cache
+# Python and local environments
 __pycache__/
-*.pyc
-
-# Ignore Environment
-.env
+*.py[cod]
+.venv/
 venv/
-.DS_Store
-echo mlflow.db >> .gitignore
+.env
+.pytest_cache/
+.pytest_tmp*/
+.ruff_cache/
+
+# DVC materializes project data; root data/ remains the tracked source
+/data/*.tsv
+
+# Generated outputs; already tracked legacy files need an explicit future untrack
+/artifacts/
+/mlruns/
+mlflow.db*
+/confusion_matrix.png
+*.pkl
+*.joblib
+*.log
+*.tmp
+*.temp

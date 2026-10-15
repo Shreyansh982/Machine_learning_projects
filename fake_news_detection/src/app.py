@@ -1,87 +1,88 @@
-import streamlit as st
-import mlflow.sklearn
+from pathlib import Path
+
 import pandas as pd
-import re
+import streamlit as st
 
-st.set_page_config(page_title="Fake News Detector", page_icon="🕵️‍♀️", layout="wide")
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
+from model_io import load_model, predict_probabilities
+from preprocess import (
+    CLASS_NAMES, DATA_DIR, FEATURE_COLUMNS, HISTORY_COLUMNS, LABEL_MAPPING,
+    NUMERIC_FEATURES, PROJECT_ROOT, TEXT_METADATA, load_and_process_data, prepare_features,
+)
 
-def clean_text(text):
-    text = str(text).lower()
-    text = re.sub(r'[^a-z0-9\s]', '', text)
-    return text
+st.set_page_config(page_title='Political claim classifier', page_icon='🔎', layout='wide')
+st.title('Political claim truthfulness estimates')
+st.write('This model estimates a grouped LIAR label from claim text and speaker metadata. It does not verify facts or retrieve evidence.')
+st.caption('; '.join(
+    f"{target} = {name} ({', '.join(label for label, value in LABEL_MAPPING.items() if value == target)})"
+    for target, name in CLASS_NAMES.items()
+) + '. Probabilities are uncalibrated model outputs.')
 
-def construct_input(party, speaker, subject, context, statement):
-    return f"{party} {speaker} {subject} {context} {clean_text(statement)}".lower()
+
+@st.cache_resource
+def cached_model(path, modified_ns):
+    return load_model(path)
+
 
 @st.cache_data
-def load_test_data():
-    try:
-        cols = ['id', 'label', 'statement', 'subject', 'speaker', 'job', 'state', 'party', 'bt', 'f', 'ht', 'mt', 'pof', 'ctx']
-        return pd.read_csv("data/test.tsv", sep='\t', header=None, names=cols)
-    except: return pd.DataFrame()
+def cached_test_data(path, modified_ns):
+    return load_and_process_data(path)
 
-test_df = load_test_data()
-st.sidebar.header("Configuration")
-run_id = st.sidebar.text_input("MLflow Run ID:")
 
-if st.sidebar.button("🎲 Random Test Case"):
-    if not test_df.empty:
-        row = test_df.sample(1).iloc[0]
-        st.session_state['speaker'] = str(row['speaker'])
-        st.session_state['party'] = str(row['party'])
-        st.session_state['subject'] = str(row['subject']) 
-        st.session_state['context'] = str(row['ctx'])     
-        st.session_state['statement'] = str(row['statement'])
-        st.session_state['actual_label'] = str(row['label'])
-
-if run_id:
-    try:
-        model = mlflow.sklearn.load_model(f"runs:/{run_id}/model")
-        st.sidebar.success("Model Loaded!")
-    except: st.sidebar.error("Invalid Run ID")
-else:
+st.sidebar.header('Model')
+model_path = st.sidebar.text_input('Model artifact path (relative to project)', value='artifacts/model.joblib')
+try:
+    resolved = Path(model_path)
+    if not resolved.is_absolute():
+        resolved = PROJECT_ROOT / resolved
+    model = cached_model(str(resolved), resolved.stat().st_mtime_ns)
+except (OSError, ValueError, TypeError) as exc:
+    st.sidebar.error(f'Cannot load model: {exc}. Train with: python fake_news_detection/src/train.py (repository root).')
     st.stop()
+st.sidebar.success('Model loaded')
+st.sidebar.caption(str(resolved))
 
-st.title("🕵️‍♀️ Fake News Detector (Pro)")
-
-if 'actual_label' in st.session_state:
-    lbl = st.session_state['actual_label']
-    st.info(f"📝 Actual Label: **{lbl.upper()}**")
-
-with st.form("prediction_form"):
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: speaker = st.text_input("Speaker", value=st.session_state.get('speaker', 'donald-trump'))
-    with c2: party = st.text_input("Party", value=st.session_state.get('party', 'republican'))
-    with c3: subject = st.text_input("Subject", value=st.session_state.get('subject', 'economy'))
-    with c4: context = st.text_input("Context", value=st.session_state.get('context', 'tweet'))
-    
-    statement = st.text_area("Statement", value=st.session_state.get('statement', 'Says...'))
-    submit = st.form_submit_button("Check Veracity")
-
-if submit:
-    final_input = construct_input(party, speaker, subject, context, statement)
-    input_data = pd.DataFrame({
-        'combined_text': [final_input],
-        'barely_true_counts': [0],
-        'false_counts': [0],
-        'half_true_counts': [0],
-        'mostly_true_counts': [0],
-        'pants_on_fire_counts': [0]
-    })
+if st.sidebar.button('Random test example'):
     try:
-        probs = model.predict_proba(input_data)[0]
-        if probs[1] > 0.5:
-            st.error(f"🚨 FAKE ({probs[1]:.1%} Confidence)")
-            st.progress(float(probs[1]))
-        else:
-            st.success(f"✅ REAL ({probs[0]:.1%} Confidence)")
-            st.progress(float(probs[0]))
-            
-        with st.expander("Debug Info"):
-            st.write(f"**Processed Text:** `{final_input}`")
-            st.write("**Full DataFrame Input:**")
-            st.dataframe(input_data)
+        path = DATA_DIR / 'test.tsv'
+        test_data = cached_test_data(str(path), path.stat().st_mtime_ns)
+        row = test_data.sample(1).iloc[0]
+        for column in ['statement', *TEXT_METADATA, *NUMERIC_FEATURES]:
+            value = row[column]
+            st.session_state[column] = str(int(value)) if column in NUMERIC_FEATURES else ('' if pd.isna(value) else str(value))
+        st.session_state['test_example'] = row.to_dict()
+    except (OSError, ValueError) as exc:
+        st.sidebar.error(f'Cannot load test examples: {exc}. Restore data/test.tsv as described in README.md.')
 
-    except Exception as e:
-        st.error(f"Model Error: {e}")
+st.info('Supply all five known speaker history counts, excluding this claim. Leave unknown counts blank; prediction requires known counts. Enter 0 only for an actual zero. Optional text metadata can be left blank.')
+with st.form('prediction_form'):
+    columns = st.columns(4)
+    for container, field, title in zip(columns, TEXT_METADATA, ['Party', 'Speaker', 'Subject', 'Context']):
+        with container:
+            st.text_input(title, key=field)
+    st.text_area('Claim', key='statement')
+    columns = st.columns(5)
+    for container, (label, field) in zip(columns, HISTORY_COLUMNS.items()):
+        with container:
+            st.text_input(f'{label} count', key=field)
+    submitted = st.form_submit_button('Estimate label')
+
+if submitted:
+    try:
+        raw = pd.DataFrame([{field: st.session_state[field] for field in ['statement', *TEXT_METADATA, *NUMERIC_FEATURES]}])
+        features = prepare_features(raw)
+        example = st.session_state.get('test_example')
+        if example is not None:
+            original = prepare_features(pd.DataFrame([example])).reset_index(drop=True)
+            if features.equals(original):
+                label = example['label']
+                st.info(f"Dataset label: {label} ({CLASS_NAMES[LABEL_MAPPING[label]]}). History counts exclude this claim.")
+        probabilities = predict_probabilities(model, features)
+        predicted = int(model.predict(features)[0])
+        st.subheader(f'Model estimate: {CLASS_NAMES[predicted]}')
+        for label, name in CLASS_NAMES.items():
+            st.write(f'{name}: {probabilities[label][0]:.1%} model probability')
+        st.caption('These probabilities are not calibrated confidence or evidence that the claim is true or false.')
+        with st.expander('Prepared model inputs'):
+            st.dataframe(features[FEATURE_COLUMNS])
+    except (ValueError, TypeError) as exc:
+        st.error(f'Cannot estimate this claim: {exc}')
