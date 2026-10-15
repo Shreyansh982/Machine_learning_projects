@@ -4,6 +4,7 @@ import pandas as pd
 import re
 
 st.set_page_config(page_title="Fake News Detector", page_icon="🕵️‍♀️", layout="wide")
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
 
 def clean_text(text):
     text = str(text).lower()
